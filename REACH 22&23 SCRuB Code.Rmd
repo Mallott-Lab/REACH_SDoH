@@ -1,0 +1,106 @@
+---
+title: "REACH 22&23 SCRuB Code"
+author: "Carlye Chaney"
+date: "2024-07-02"
+output: html_document
+---
+
+We chose SCRuB over decontam
+```{r}
+library(tidyverse) # Easily Install and Load the 'Tidyverse', CRAN 
+library(qiime2R) # Import qiime2 artifacts to R, [github::jbisanz/qiime2R]  
+library(biomformat)
+
+
+scrub_info = read.csv("/Users/carly/OneDrive/Desktop/Publications/REACH Microbiome Comparison/REACH 22&23 SCRuB Metadata.csv", header = T)
+
+#making sample ID the row name
+scrub <- scrub_info[,-1]
+rownames(scrub) <- scrub_info[,1]
+
+table <- read_qza("/Users/carly/OneDrive/Desktop/Publications/REACH Microbiome Comparison/table-combined-1.qza")
+count_tab <- table$data %>% as.data.frame() 
+
+library(SCRuB)
+t_count_tab <- t(count_tab) #transpose the data frame 
+
+#reorder scrub data frame to match t_count_tab
+scrub2 <- scrub[ order(match(rownames(scrub), rownames(t_count_tab))), ]
+table(rownames(t_count_tab) == rownames(scrub2)) # checking to make sure row names match
+
+inds <- which( t_count_tab %>% rowSums() > 0 )
+
+#making separate data frames for each plate and dropping plate number column
+scrub_info_P1 <- scrub2[scrub2$Plate.number == 1,]
+scrub_info_P1 <- scrub_info_P1[, -3]
+
+scrub_info_P2 <- scrub2[scrub2$Plate.number == 2,]
+scrub_info_P2 <- scrub_info_P2[, -3]
+
+scrub_info_P3 <- scrub2[scrub2$Plate.number == 3,]
+scrub_info_P3 <- scrub_info_P3[, -3]
+
+scrub_info_P4 <- scrub2[scrub2$Plate.number == 4,]
+scrub_info_P4 <- scrub_info_P4[, -3]
+
+scrub_info_P5 <- scrub2[scrub2$Plate.number == 5,]
+scrub_info_P5 <- scrub_info_P5[, -3]
+
+
+#Getting feature table info for each plate in first line. Then getting rid of samples with 0 reads becuase it causes SCRuB to error in the second line.
+t_count_tab_P1 <- t_count_tab[row.names(t_count_tab) %in% row.names(scrub_info_P1),]
+inds1 <- which( t_count_tab_P1 %>% rowSums() > 0 )
+
+t_count_tab_P2 <- t_count_tab[row.names(t_count_tab) %in% row.names(scrub_info_P2),]
+inds2 <- which( t_count_tab_P2 %>% rowSums() > 0 )
+
+t_count_tab_P3 <- t_count_tab[row.names(t_count_tab) %in% row.names(scrub_info_P3),]
+inds3 <- which( t_count_tab_P3 %>% rowSums() > 0 )
+
+t_count_tab_P4 <- t_count_tab[row.names(t_count_tab) %in% row.names(scrub_info_P4),]
+inds4 <- which( t_count_tab_P4 %>% rowSums() > 0 )
+
+t_count_tab_P5 <- t_count_tab[row.names(t_count_tab) %in% row.names(scrub_info_P5),]
+inds5 <- which( t_count_tab_P5 %>% rowSums() > 0 )
+
+#Making control order for SCRuB command
+control_order <- c("Extraction_Negative", "Blank", "Empty")
+control_order2 <- c("Extraction_Negative", "Blank")
+control_order3 <- c("Extraction_Negative")
+
+#SCRuB each plate
+scr_out_plate1 <- SCRuB(t_count_tab_P1[inds1, ], scrub_info_P1[inds1, ], control_order = control_order)
+scr_out_plate2 <- SCRuB(t_count_tab_P2[inds2, ], scrub_info_P2[inds2, ], control_order = control_order2)
+scr_out_plate3 <- SCRuB(t_count_tab_P3[inds3, ], scrub_info_P3[inds3, ], control_order = control_order2)
+scr_out_plate4 <- SCRuB(t_count_tab_P4[inds4, ], scrub_info_P4[inds4, ], control_order = control_order2)
+scr_out_plate5 <- SCRuB(t_count_tab_P5[inds5, ], scrub_info_P5[inds5, ], control_order = control_order3)
+
+#getting matrix of decontaminated samples
+decontaminated_samples_1 <- scr_out_plate1$decontaminated_samples 
+decontaminated_samples_2 <- scr_out_plate2$decontaminated_samples 
+decontaminated_samples_3 <- scr_out_plate3$decontaminated_samples 
+decontaminated_samples_4 <- scr_out_plate4$decontaminated_samples 
+decontaminated_samples_5 <- scr_out_plate5$decontaminated_samples 
+
+#transposing matrix of decomtaminated samples so it is in the expected format to be imported in QIIME
+decontaminated_samples_t_1 <- t(decontaminated_samples_1) 
+decontaminated_samples_t_2 <- t(decontaminated_samples_2)
+decontaminated_samples_t_3 <- t(decontaminated_samples_3)
+decontaminated_samples_t_4 <- t(decontaminated_samples_4)
+decontaminated_samples_t_5 <- t(decontaminated_samples_5)
+
+#combine data frames
+combine1_2 <- cbind(decontaminated_samples_t_1, decontaminated_samples_t_2)
+combine_3 <- cbind(combine1_2, decontaminated_samples_t_3)
+combine_4 <- cbind(combine_3, decontaminated_samples_t_4)
+combine_final <- cbind(combine_4, decontaminated_samples_t_5)
+
+#making BIOM object
+decontam_22_23_BIOM <- make_biom(combine_final) 
+
+#exporting BIOM object to folder.
+write_biom(decontam_22_23_BIOM, '/Users/carly/OneDrive/Desktop/Publications/REACH Microbiome Comparison/decontaminated_samples_22_23.biom' )  
+
+
+```
+

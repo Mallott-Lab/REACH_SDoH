@@ -1,0 +1,406 @@
+#load packages
+library(qiime2R) # Import qiime2 artifacts to R, [github::jbisanz/qiime2R]  
+library(biomformat)
+library(tidyverse)
+library(dplyr)
+library(vegan)
+library(pairwiseAdonis)
+library("glmmTMB")
+library(nlme)
+library(stats)
+library(car)
+library(multcomp)
+library(ggplot2)
+library("phyloseq")
+library("ggpubr")
+library("readxl")
+
+#reading the data
+bray_4015 <- (read_tsv("/Users/jenn/Desktop/Combined_2022_2023/core-metrics-results-4015/extracted_bray_curtis/66899c44-9f72-4fa2-882c-5f59e6fb3a6f/data/distance-matrix.tsv"))
+jaccard_4015 = read_qza("/Users/jenn/Desktop/Combined_2022_2023/core-metrics-results-4015/jaccard_distance_matrix.qza")
+jaccard <- as.data.frame(jaccard_4015$data)
+unweighted_unifrac_4015 = read_qza("/Users/jenn/Desktop/Combined_2022_2023/core-metrics-results-4015/unweighted_unifrac_distance_matrix.qza")
+unweighted <- as.data.frame(unweighted_unifrac_4015$data)
+weighted_unifrac_4015 = read_qza("/Users/jenn/Desktop/Combined_2022_2023/core-metrics-results-4015/weighted_unifrac_distance_matrix.qza")
+weighted <- as.data.frame(weighted_unifrac_4015$data)
+faith_pd_4015 <- read_qza("/Users/jenn/Desktop/Combined_2022_2023/core-metrics-results-4015/faith_pd_vector.qza")
+faith_pd_final <- as.data.frame(faith_pd_4015$data)
+phyla <- read.csv("~/Downloads/glm_phyla (2).csv", row.names = 1)
+combined <- read_csv(file="/Users/jenn/Desktop/combined2.csv")
+#combined is the metadata and CRP combined 
+shannon_4015 <- read_qza("/Users/jenn/Desktop/Combined_2022_2023/core-metrics-results-4015/shannon_vector.qza")
+shannon_final <- as.data.frame(shannon_4015$data)
+shannon_final$Sample_ID <- rownames(shannon_final)
+evenness_4015 <- read_qza("/Users/jenn/Desktop/Combined_2022_2023/core-metrics-results-4015/evenness_vector.qza")
+evenness_final <- as.data.frame(evenness_4015$data)
+evenness_final$Sample_ID <- rownames(evenness_final)
+observedfeatures_4015 <- read_qza("/Users/jenn/Desktop/Combined_2022_2023/core-metrics-results-4015/observed_features_vector.qza")
+observedfeatures_final <- as.data.frame(observedfeatures_4015$data)
+observedfeatures_final$Sample_ID <- rownames(observedfeatures_final)
+metadata  <- read_excel("~/Desktop/Combined_2022_2023/metadata-combined.xlsx")
+fulldataset <- read_excel("~/Downloads/REACH_metadata_5 (2).xlsx")
+
+
+#renaming the columns (faith)
+faith_pd_final$Sample_ID <- faith_pd_final$V1
+faith_pd_final$faith_pd <- faith_pd_final$V2
+faith_pd_final <- subset( faith_pd_final, select = -c(V1, V2 ))
+
+#creating fully merged dataset
+alpha <- merge(fulldataset, faith_pd_final, by = "Sample_ID")
+alpha <- merge(alpha, shannon_final, by = "Sample_ID")
+alpha <- merge(alpha, evenness_final, by = "Sample_ID")
+alpha <- merge(alpha, observedfeatures_final, by = "Sample_ID")
+beta <- merge(metadata, bray_4015)
+combined <- merge(fulldataset, alpha, by = "Mallott_ID")
+as.factor(fulldataset$Income_range)
+
+#make the alpha graphs
+shannon = ggboxplot(data=subset(alpha, !is.na(Income_range)),  x = "Income_range",  
+                    y = "shannon_entropy", color = "Income_range",  
+                    palette = c("#E69F00", "#56B4E9", "#009E73", "#CC79A7", "#0072B2", "#D55E00", "#000000"),  
+                    add = "jitter",  
+                    ylab = "shannon_entropy", xlab = "Income Range") + theme(legend.position = "right", plot.title = element_text(hjust = 0)) +   
+  guides(color = guide_legend(title = "Income_range")) + theme(text=element_text(family="Tahoma")) + 
+  theme(axis.title.x=element_text(size=rel(1)),  
+        axis.title.y=element_text(size=rel(1)), 
+        plot.title = element_text(size=rel(2), hjust = 0.5), 
+        legend.title = element_text(size=rel(1.5)), 
+        legend.text = element_text(size = rel(1))) + ggtitle("Shannon Diversity Boxplot") 
+print(shannon) 
+
+
+evenness <- ggplot(data = alpha, aes(group= sugar, x = sugar, y = pielou_evenness)) +
+  geom_boxplot() +
+  geom_jitter(fill = "white") +
+  #scale_fill_manual(values = c("#2E959F", "#185F9D", "#001112", "#940233", "#894564", "#670694","#785642")) +
+  ylab("Evenness") +
+  xlab("Sugar") +
+  theme_minimal() +
+  scale_x_continuous(breaks = seq(0, 12, by = 1)) +
+  theme(panel.background = element_rect(fill = "white"))
+
+evenness
+
+faith <- ggplot(data = alpha, aes(group= sugar, x = sugar, y = faith_pd)) +
+  geom_boxplot() +
+  geom_jitter(fill = "white") +
+  #scale_fill_manual(values = c("#2E959F", "#185F9D", "#001112", "#940233", "#894564", "#670694","#785642")) +
+  ylab("Faith PD") +
+  xlab("Sugar") +
+  theme_minimal() +
+  scale_x_continuous(breaks = seq(0, 12, by = 1)) +
+  theme(panel.background = element_rect(fill = "white"))
+
+faith
+
+shannon <- ggplot(data = fulldataset, aes(group= Income_range, x = PC1, y = shannon_entropy)) +
+  geom_boxplot() +
+  geom_jitter(fill = "white") +
+  #scale_fill_manual(values = c("#2E959F", "#185F9D", "#001112", "#940233", "#894564", "#670694","#785642")) +
+  ylab("Shannon Entropy") +
+  xlab("Income Range") +
+  scale_x_continuous(breaks = seq(0, 12, by = 1)) +
+  theme_minimal() +
+  theme(panel.background = element_rect(fill = "white"))
+shannon
+
+meta$Income_range <- as.factor(meta$Income_range)
+meta$observed_features <- as.numeric(meta$observed_features)
+
+# Create the plot
+alpha$Income_range <- as.factor(alpha$Income_range)
+
+alpha$Income_range <- factor(alpha$Income_range,
+                             levels = 0:5,
+                             labels = c("Less than $10,000",
+                                        "$10,000–$19,999",
+                                        "$20,000–$34,999",
+                                        "$35,000–$49,999",
+                                        "$50,000–$74,999",
+                                        "$75,000–$99,999"))
+
+observed_features <- ggboxplot(
+  data = subset(alpha, !is.na(Income_range)),
+  x = "Income_range",
+  y = "observed_features",
+  color = "Income_range",
+  palette = c("#E69F00", "#56B4E9", "#009E73", "#CC79A7", "#0072B2", "#D55E00"),
+  add = "jitter",
+  ylab = "Observed Features",
+  xlab = "Income Range"
+) +
+  theme(
+    legend.position = "right",
+    plot.title = element_text(size = rel(2), hjust = 0.5),
+    text = element_text(family = "Tahoma"),
+    axis.title.x = element_text(size = rel(1)),
+    axis.title.y = element_text(size = rel(1)),
+    axis.text.x = element_blank(),  # <- hides x-axis labels
+    legend.title = element_text(size = rel(1.5)),
+    legend.text = element_text(size = rel(1))
+  ) +
+  guides(color = guide_legend(title = "Income Range")) +
+  ggtitle("Observed Features Boxplot")
+print(observed_features)
+
+#for continuous variables
+#since some of the log values are NA, we need to remove them
+meta_clean <- meta[!is.na(meta$log_PC1) & !is.na(meta$shannon_entropy) & 
+                     is.finite(meta$log_PC1) & is.finite(meta$shannon_entropy), ]
+
+corr_plot <- ggplot(data = meta_clean, aes(x = log_PC1, y = shannon_entropy)) + 
+  geom_smooth(method = "lm", color = "#56B4E9", se = TRUE) +
+  geom_point(color = "black", alpha = 0.7) +
+  theme(
+    legend.key = element_blank(),
+    axis.title.x = element_text(size = rel(1.5)), 
+    axis.title.y = element_text(size = rel(1.5)),
+    plot.title = element_text(size = rel(2), hjust = 0.5),  # centered title
+    legend.title = element_text(size = rel(1.8), hjust = 0.5),
+    legend.text = element_text(size = rel(1.5)),
+    panel.background = element_blank(), 
+    plot.background = element_blank(),
+    panel.grid = element_blank(),
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 1)
+  ) +
+  ggtitle("PC1 Shannon Entropy Correlation Plot") +
+  labs(x = "log(PC1)", y = "Shannon Entropy")
+
+corr_plot
+
+#weighted,unweighted, bray curtis, and jaccard plots
+# Ensure 'CRP' is correctly assigned as a factor
+meta$PC1 <- as.factor(meta$PC1)
+
+sample_names <- rownames(as.matrix(bray_3300))  # get sample IDs from distance matrix
+
+# Run PERMANOVA
+adonis_result <- adonis2(jaccard_3300 ~ PC1, data = meta, method = "jaccard", 
+                         permutations = 5000, na.action = na.omit, by = "margin")
+adonis_result
+
+adonis_bray <- adonis2(bray_3300 ~ PC1, data = meta, method= "bray", 
+                       permutations = 5000, na.action = na.omit, by = "margin")
+adonis_bray
+
+# Perform NMDS
+mds_bray <-metaMDS(bray_3300, k=2, trymax=1000)
+
+# Extract NMDS points
+
+mds_bray_points2 <- as.data.frame(mds_bray$points)
+mds_bray_points <- as.data.frame(mds_bray$points)
+mds_bray_points$Row.names <- rownames(mds_bray$points) 
+mds_bray_points2 <- merge(
+  x = mds_bray_points, 
+  y = meta, 
+  by.x = "Row.names", 
+  by.y = "Sample_ID", 
+  all.x = TRUE
+)
+
+# Merge NMDS points with additional metadata (ensure 'full' has matching SampleID)
+mds_bray_points2 <- merge(
+  x = mds_bray_points, 
+  y = meta, 
+  by.x = "Row.names", 
+  by.y = "Sample_ID"
+)
+
+
+bray_plot3300 <- ggplot(data = mds_bray_points2, aes(group= CRP, x = MDS1, y = MDS2, shape = CRP)) +
+  geom_point(size = 2, aes(color = CRP)) + 
+  scale_color_manual(values = c("#2E959F", "#185F9D", "#AF34AE", "#435516", "#BAABAB", "#AC53FF", "#FF0000", "#390543", "#0000FF", "#B42069")) + 
+  scale_shape_manual(values = c(0, 1, 2, 3, 4, 5, 6)) +  # Limit shapes to the number of levels in `CRP`
+  theme(legend.key = element_blank()) + 
+  theme(axis.title.x = element_text(size = rel(1.5)), 
+        axis.title.y = element_text(size = rel(1.5)),
+        plot.title = element_text(size = rel(2)),
+        legend.title = element_text(size = rel(1.8)),
+        legend.text = element_text(size = rel(1.5))) + 
+  stat_ellipse(aes(x = MDS1, y = MDS2, group = CRP, 
+                   linetype = CRP), 
+               type = "t", level = 0.9) + 
+  scale_linetype_manual(values = c(1, 2, 3, 4, 5, 6))
+
+bray_plot3300
+
+#make the jaccard plot
+jaccard4015 <- as.matrix(read.table("/Users/jenn/Desktop/Combined_2022_2023/core-metrics-results-4015/extracted_jaccard/distance-matrix.tsv", header = TRUE, row.names = 1))
+meta$PC1 <- as.factor(meta$PC1)
+adonis_result <- adonis2(jaccard4015 ~ PC1, data = meta, method = "jaccard", permutations = 5000, na.action = na.omit, by = "margin")
+mds_jaccard_4015<-metaMDS(jaccard4015, k=2, trymax=1000)
+mds_jaccard_4015_points<-mds_jaccard_4015$points
+mds_jaccard_4015_points2<-merge(x=mds_jaccard_4015_points, y = meta, 
+                                by.x = "row.names", by.y = "Sample_ID")
+
+combined2$Income_range <- factor(combined2$Income_range,
+                                 levels = 0:5,
+                                 labels = c("Less than $10,000",
+                                            "$10,000–$19,999",
+                                            "$20,000–$34,999",
+                                            "$35,000–$49,999",
+                                            "$50,000–$74,999",
+                                            "$75,000–$99,999"))
+
+mds_jaccard_4015_points2$Income_range <- factor(
+  mds_jaccard_4015_points2$Income_range,
+  levels = 0:5,
+  labels = c("Less than $10,000",
+             "$10,000–$19,999",
+             "$20,000–$34,999",
+             "$35,000–$49,999",
+             "$50,000–$74,999",
+             "$75,000–$99,999")
+)
+
+plot_data <- subset(mds_jaccard_4015_points2, 
+                    !is.na(Income_range) & !is.na(MDS1) & !is.na(MDS2))
+
+jaccard_plot4015 <- ggplot(plot_data, aes(x = MDS1, y = MDS2, 
+                                          color = Income_range, shape = Income_range)) +
+  geom_point(size = 2) + 
+  stat_ellipse(aes(group = Income_range), type = "t", level = 0.9) +
+  scale_color_manual(values = c("#E69F00", "#56B4E9", "#009E73", "#CC79A7", "#0072B2", "#D55E00")) +
+  scale_shape_manual(values = c(0, 2, 3, 4, 5, 6)) + 
+  theme_minimal() +
+  theme(
+    legend.key = element_blank(),
+    axis.title.x = element_text(size = rel(1.5)), 
+    axis.title.y = element_text(size = rel(1.5)),
+    plot.title = element_text(size = rel(2), hjust = 0.5),
+    legend.title = element_text(size = rel(1.8)),
+    legend.text = element_text(size = rel(1.5)),
+    text = element_text(family = "Tahoma"),
+    panel.background = element_blank(),
+    plot.background = element_blank(),
+    panel.grid = element_blank()
+  ) +
+  guides(color = guide_legend(title = "Income Range"),
+         shape = guide_legend(title = "Income Range")) +
+  labs(title = "Jaccard MDS Plot", x = "MDS1", y = "MDS2")
+
+jaccard_plot4015
+
+weighted_unifrac_4015 <- as.matrix(read.table("/Users/jenn/Desktop/Combined_2022_2023/core-metrics-results-4015/extracted_weighted/distance-matrix.tsv", header = TRUE, row.names = 1))
+mds_weighted_unifrac_4015<-metaMDS(weighted_unifrac_4015, k=2, trymax=1000)
+mds_weighted_unifrac_4015_points<-mds_weighted_unifrac_4015$points
+mds_weighted_unifrac_4015_points2<-merge(x=mds_weighted_unifrac_4015_points, y = meta, 
+                                         by.x = "row.names", by.y = "Sample_ID")
+weighted_unifrac_plot4015 <- ggplot(mds_weighted_unifrac_4015_points2, aes(x = MDS1, y = MDS2, 
+                                                                           color = PC1, shape = CRP)) +
+  geom_point(size = 2, aes(color = CRP)) + 
+  scale_color_manual(values = c("#2E959F", "#185F9D", "#AF34AE", "#435516", "#BAABAB", "#AC53FF", "#FF0000", "#390543", "#0000FF", "#B42069", "#FBA231")) + 
+  scale_shape_manual(values = c(0, 2, 3, 4, 5, 6, 7, 8)) +  # Limit shapes to the number of levels in `CRP`
+  theme(legend.key = element_blank()) + 
+  theme(axis.title.x = element_text(size = rel(1.5)), 
+        axis.title.y = element_text(size = rel(1.5)),
+        plot.title = element_text(size = rel(2)),
+        legend.title = element_text(size = rel(1.8)),
+        legend.text = element_text(size = rel(1.5))) + 
+  stat_ellipse(aes(x = MDS1, y = MDS2, group = CRP), 
+               type = "t", level = 0.9) + 
+  scale_linetype_manual(values = c(0, 2, 3, 4, 5, 6, 7, 8))
+
+weighted_unifrac_plot4015
+
+unweighted_unifrac_4015 <- as.matrix(read.table("/Users/jenn/Desktop/Combined_2022_2023/core-metrics-results-4015/extracted_unweighted/distance-matrix.tsv", header = TRUE, row.names = 1))
+mds_unweighted_unifrac_4015<-metaMDS(unweighted_unifrac_4015, k=2, trymax=1000)
+mds_unweighted_unifrac_4015_points<-mds_unweighted_unifrac_4015$points
+mds_unweighted_unifrac_4015_points2<-merge(x=mds_unweighted_unifrac_4015_points, y = meta, 
+                                           by.x = "row.names", by.y = "Sample_ID")
+unweighted_unifrac_plot4015 <- ggplot(mds_unweighted_unifrac_4015_points2, aes(x = MDS1, y = MDS2, 
+                                                                               color = CRP, shape = CRP)) +
+  geom_point(size = 2, aes(color = CRP)) + 
+  scale_color_manual(values = c("#2E959F", "#185F9D", "#AF34AE", "#435516", "#BAABAB", "#AC53FF", "#FF0000", "#390543", "#0000FF", "#B42069", "#FBA231")) + 
+  scale_shape_manual(values = c(0, 2, 3, 4, 5, 6, 7, 8)) +  # Limit shapes to the number of levels in `CRP`
+  theme(legend.key = element_blank()) + 
+  theme(axis.title.x = element_text(size = rel(1.5)), 
+        axis.title.y = element_text(size = rel(1.5)),
+        plot.title = element_text(size = rel(2)),
+        legend.title = element_text(size = rel(1.8)),
+        legend.text = element_text(size = rel(1.5))) + 
+  stat_ellipse(aes(x = MDS1, y = MDS2, group = CRP), 
+               type = "t", level = 0.9) + 
+  scale_linetype_manual(values = c(0, 2, 3, 4, 5, 6, 7, 8))
+
+unweighted_unifrac_plot4015
+
+#Heatmap for continuous variables
+mds_unweighted_unifrac_4015_points2$PC1 <- as.numeric(mds_unweighted_unifrac_4015_points2$PC1)
+
+# Create the plot again
+unweighted_unifrac_plot4015 <- ggplot(mds_unweighted_unifrac_4015_points2, aes(x = MDS1, y = MDS2, color = PC1)) +
+  geom_point(size = 2) + 
+  scale_color_gradient(low = "#2E959F", high = "#FF0000") +  # Choose colors for the heatmap scale
+  scale_shape_manual(values = c(0, 2, 3, 4, 5, 6, 7, 8)) +  # Limit shapes to the number of levels in CRP
+  theme(legend.key = element_blank()) + 
+  theme(axis.title.x = element_text(size = rel(1.5)), 
+        axis.title.y = element_text(size = rel(1.5)),
+        plot.title = element_text(size = rel(2)),
+        legend.title = element_text(size = rel(1.8)),
+        legend.text = element_text(size = rel(1.5)),
+        panel.background = element_blank(),  # Remove background color
+        panel.border = element_rect(fill=NA),
+        plot.background = element_blank(),   # Remove overall plot background
+        panel.grid = element_blank(),        # Remove grid lines
+        axis.line = element_line(color = "black"))+  # Add axis lines in black
+  ggtitle("PC1 Unweighted Unifrac Correlation Plot")
+unweighted_unifrac_plot4015
+
+weighted_unifrac_plot4015 <- ggplot(mds_weighted_unifrac_4015_points2, aes(x = MDS1, y = MDS2, color = PC1)) +
+  geom_point(size = 2) + 
+  scale_color_gradient(low = "#2E959F", high = "#FF0000") +  # Choose colors for the heatmap scale
+  scale_shape_manual(values = c(0, 2, 3, 4, 5, 6, 7, 8)) +  # Limit shapes to the number of levels in CRP
+  theme(legend.key = element_blank()) + 
+  theme(axis.title.x = element_text(size = rel(1.5)), 
+        axis.title.y = element_text(size = rel(1.5)),
+        plot.title = element_text(size = rel(2)),
+        legend.title = element_text(size = rel(1.8)),
+        legend.text = element_text(size = rel(1.5)),
+        panel.border = element_rect(fill=NA),
+        panel.background = element_blank(),  # Remove background color
+        plot.background = element_blank(),   # Remove overall plot background
+        panel.grid = element_blank(),        # Remove grid lines
+        axis.line = element_line(color = "black")) +  # Add axis lines in black
+  ggtitle("PC1 Weighted Unifrac Correlation Plot")
+weighted_unifrac_plot4015
+
+mds_bray_points2$CRP <- as.numeric(mds_bray_points2$CRP)
+bray_plot4015 <- ggplot(mds_bray_points2, aes(x = MDS1, y = MDS2, color = CRP)) +
+  geom_point(size = 2) + 
+  scale_color_gradient(low = "#2E959F", high = "#FF0000") +  # Choose colors for the heatmap scale
+  scale_shape_manual(values = c(0, 2, 3, 4, 5, 6, 7, 8)) +  # Limit shapes to the number of levels in CRP
+  theme(legend.key = element_blank()) + 
+  theme(axis.title.x = element_text(size = rel(1.5)), 
+        axis.title.y = element_text(size = rel(1.5)),
+        plot.title = element_text(size = rel(2), hjust = .5),
+        legend.title = element_text(size = rel(1.8)),
+        legend.text = element_text(size = rel(1.5)),
+        panel.background = element_blank(),  # Remove background color
+        plot.background = element_blank(),   # Remove overall plot background
+        panel.grid = element_blank(),        # Remove grid lines
+        axis.line = element_line(color = "black"))+  # Add axis lines in black
+  ggtitle("PC1 Bray Curtis Plot")
+
+bray_plot4015
+
+mds_jaccard_4015_points2$PC1 <- as.numeric(mds_jaccard_4015_points2$PC1)
+
+jaccard_plot4015 <- ggplot(mds_jaccard_4015_points2, aes(x = MDS1, y = MDS2, color = PC1)) +
+  geom_point(size = 2) + 
+  scale_color_gradient(low = "#2E959F", high = "#FF0000") +  # Choose colors for the heatmap scale
+  theme(legend.key = element_blank()) + 
+  theme(axis.title.x = element_text(size = rel(1.5)), 
+        axis.title.y = element_text(size = rel(1.5)),
+        plot.title = element_text(size = rel(2), hjust = .5),
+        legend.title = element_text(size = rel(1.8)),
+        legend.text = element_text(size = rel(1.5)),
+        panel.background = element_blank(),  # Remove background color
+        plot.background = element_blank(),   # Remove overall plot background
+        panel.grid = element_blank(),        # Remove grid lines
+        axis.line = element_line(color = "black"))+  # Add axis lines in black
+  ggtitle("PC1 Jaccard Plot")
+
+jaccard_plot4015
